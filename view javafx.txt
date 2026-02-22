@@ -1,0 +1,674 @@
+package view;
+
+import javafx.application.Application;
+import javafx.beans.property.SimpleStringProperty;
+import javafx.collections.FXCollections;
+import javafx.collections.ObservableList;
+import javafx.geometry.Insets;
+import javafx.geometry.Pos;
+import javafx.scene.Scene;
+import javafx.scene.control.*;
+import javafx.scene.control.cell.PropertyValueFactory;
+import javafx.scene.layout.*;
+import javafx.scene.paint.Color;
+import javafx.scene.text.Font;
+import javafx.stage.Stage;
+import tn.edu.esprit.entities.AttributEnquete;
+import tn.edu.esprit.entities.Enquete;
+import tn.edu.esprit.entities.StatutEnquete;
+import tn.edu.esprit.services.ServiceEnquete;
+
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
+public class MainApp extends Application {
+
+    private Stage primaryStage;
+    private boolean isAdmin = true; // Simule un utilisateur admin
+    private ServiceEnquete service = new ServiceEnquete();
+    private TableView<Enquete> tableEnquetes = new TableView<>();
+    private ObservableList<Enquete> enquetesList = FXCollections.observableArrayList();
+    private Label statusLabel = new Label();
+
+    @Override
+    public void start(Stage stage) {
+        this.primaryStage = stage;
+        primaryStage.setTitle("Khademni - Admin Dashboard");
+        showAccueil();
+        primaryStage.show();
+    }
+
+    private void showAccueil() {
+        BorderPane root = new BorderPane();
+
+        // ===== HEADER =====
+        HBox topBar = createHeader();
+        
+        // ===== CONTENU PRINCIPAL =====
+        TabPane tabPane = new TabPane();
+        tabPane.setStyle("-fx-background-color: #F2F0EF;");
+
+        // Onglet Accueil
+        Tab accueilTab = createAccueilTab();
+        
+        // Onglet Liste des enquêtes
+        Tab listeTab = createListeEnquetesTab();
+
+        tabPane.getTabs().addAll(accueilTab, listeTab);
+
+        // ===== STATUS BAR =====
+        HBox statusBar = createStatusBar();
+
+        // ===== ADMIN PANEL (BOTTOM) =====
+        if (isAdmin) {
+            HBox adminBar = createAdminBar();
+            root.setBottom(adminBar);
+        }
+
+        root.setTop(topBar);
+        root.setCenter(tabPane);
+        root.setStyle("-fx-background-color: #F2F0EF;");
+
+        Scene scene = new Scene(root, 1200, 700);
+        primaryStage.setScene(scene);
+        
+        // Charger les données initiales
+        chargerDonnees();
+        updateStatus("Prêt - " + enquetesList.size() + " enquête(s) chargée(s)");
+    }
+
+    private HBox createHeader() {
+        HBox topBar = new HBox(10);
+        topBar.setPadding(new Insets(10));
+        topBar.setAlignment(Pos.CENTER_LEFT);
+        topBar.setStyle("-fx-background-color: #1F1B1B;");
+
+        Label logo = new Label("Khademni");
+        logo.setTextFill(Color.WHITE);
+        logo.setFont(Font.font("Verdana", 22));
+        logo.setStyle("-fx-font-weight: bold;");
+
+        TextField searchField = new TextField();
+        searchField.setPromptText("Rechercher une enquête...");
+        searchField.setPrefWidth(300);
+
+        Button btnSearch = new Button("🔍 Rechercher");
+        btnSearch.setStyle("-fx-background-color: WHITE; -fx-text-fill: BLACK; -fx-font-weight: bold;");
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        Button btnLogin = new Button("Se connecter");
+        btnLogin.setStyle("-fx-background-color: WHITE; -fx-text-fill: BLACK; -fx-font-weight: bold;");
+        Button btnSignup = new Button("S’inscrire");
+        btnSignup.setStyle("-fx-background-color: WHITE; -fx-text-fill: BLACK; -fx-font-weight: bold;");
+        Button btnReclamation = new Button("📝 Réclamation");
+        btnReclamation.setStyle("-fx-background-color: WHITE; -fx-text-fill: BLACK; -fx-font-weight: bold;");
+
+        // Actions
+        btnLogin.setOnAction(e -> showMessage("Page Login - En développement"));
+        btnSignup.setOnAction(e -> showMessage("Page Inscription - En développement"));
+        btnReclamation.setOnAction(e -> {
+            try {
+                new ReclamationForm().start(primaryStage);
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
+        });
+
+        btnSearch.setOnAction(e -> {
+            String query = searchField.getText().trim().toLowerCase();
+            if (!query.isEmpty()) {
+                rechercherEnquetes(query);
+            }
+        });
+
+        searchField.setOnAction(e -> btnSearch.fire());
+
+        topBar.getChildren().addAll(
+                logo,
+                searchField,
+                btnSearch,
+                spacer,
+                btnLogin,
+                btnSignup,
+                btnReclamation
+        );
+
+        return topBar;
+    }
+
+    private Tab createAccueilTab() {
+        Tab accueilTab = new Tab("🏠 Accueil");
+        accueilTab.setClosable(false);
+        
+        VBox accueilContent = new VBox(30);
+        accueilContent.setAlignment(Pos.CENTER);
+        accueilContent.setPadding(new Insets(50));
+        accueilContent.setStyle("-fx-background-color: #F2F0EF;");
+
+        Label welcome = new Label(isAdmin ? "👋 Bienvenue Administrateur" : "👋 Bienvenue Utilisateur");
+        welcome.setFont(Font.font("Verdana", 32));
+        welcome.setTextFill(Color.web("#1F1B1B"));
+        welcome.setStyle("-fx-font-weight: bold;");
+
+        Label subtitle = new Label("Gérez vos enquêtes efficacement");
+        subtitle.setFont(Font.font("Verdana", 16));
+        subtitle.setTextFill(Color.web("#4A4A4A"));
+
+        HBox statsBox = new HBox(30);
+        statsBox.setAlignment(Pos.CENTER);
+        statsBox.setPadding(new Insets(30));
+
+        // Statistiques
+        VBox totalBox = createStatBox("📊", String.valueOf(service.getAll().size()), "Total enquêtes");
+        VBox activeBox = createStatBox("✅", String.valueOf(service.getEnquetesActives().size()), "Enquêtes actives");
+
+        statsBox.getChildren().addAll(totalBox, activeBox);
+
+        Button btnRefresh = new Button("🔄 Actualiser les statistiques");
+        btnRefresh.setStyle(
+            "-fx-background-color: #1F1B1B; " +
+            "-fx-text-fill: WHITE; " +
+            "-fx-font-weight: bold; " +
+            "-fx-font-size: 14px; " +
+            "-fx-padding: 10 20;"
+        );
+        btnRefresh.setOnAction(e -> {
+            totalBox.getChildren().set(1, new Label(String.valueOf(service.getAll().size())));
+            activeBox.getChildren().set(1, new Label(String.valueOf(service.getEnquetesActives().size())));
+        });
+
+        accueilContent.getChildren().addAll(welcome, subtitle, statsBox, btnRefresh);
+        accueilTab.setContent(accueilContent);
+
+        return accueilTab;
+    }
+
+    private VBox createStatBox(String icon, String value, String label) {
+        VBox box = new VBox(5);
+        box.setAlignment(Pos.CENTER);
+        box.setPadding(new Insets(20));
+        box.setStyle(
+            "-fx-background-color: WHITE; " +
+            "-fx-border-color: #1F1B1B; " +
+            "-fx-border-width: 2px; " +
+            "-fx-border-radius: 10px; " +
+            "-fx-background-radius: 10px;"
+        );
+        
+        Label iconLabel = new Label(icon);
+        iconLabel.setFont(Font.font(30));
+        Label valueLabel = new Label(value);
+        valueLabel.setFont(Font.font("Verdana", 24));
+        valueLabel.setStyle("-fx-font-weight: bold;");
+        Label descLabel = new Label(label);
+        descLabel.setFont(Font.font("Verdana", 12));
+        
+        box.getChildren().addAll(iconLabel, valueLabel, descLabel);
+        return box;
+    }
+
+    private Tab createListeEnquetesTab() {
+        Tab listeTab = new Tab("📋 Liste des enquêtes");
+        listeTab.setClosable(false);
+        
+        VBox content = new VBox(10);
+        content.setPadding(new Insets(20));
+        content.setStyle("-fx-background-color: #F2F0EF;");
+
+        // Titre
+        Label title = new Label("Gestion des enquêtes");
+        title.setFont(Font.font("Verdana", 24));
+        title.setTextFill(Color.web("#1F1B1B"));
+        title.setStyle("-fx-font-weight: bold;");
+
+        // Configuration du tableau
+        setupTable();
+
+        // Barre d'outils
+        ToolBar toolBar = createToolBar();
+
+        // Panneau des boutons d'action
+        HBox actionButtons = createActionButtons();
+
+        content.getChildren().addAll(title, toolBar, tableEnquetes, actionButtons);
+        listeTab.setContent(content);
+
+        return listeTab;
+    }
+
+    private void setupTable() {
+        tableEnquetes.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+        tableEnquetes.setRowFactory(tv -> {
+            TableRow<Enquete> row = new TableRow<>();
+            row.setOnMouseClicked(event -> {
+                if (event.getClickCount() == 2 && (!row.isEmpty())) {
+                    Enquete enquete = row.getItem();
+                    modifierEnquete(enquete);
+                }
+            });
+            return row;
+        });
+
+        // Colonnes
+        TableColumn<Enquete, Integer> colId = new TableColumn<>("ID");
+        colId.setCellValueFactory(new PropertyValueFactory<>("idEnquete"));
+        colId.setPrefWidth(50);
+
+        TableColumn<Enquete, String> colSujet = new TableColumn<>("Sujet");
+        colSujet.setCellValueFactory(new PropertyValueFactory<>("sujet"));
+        colSujet.setPrefWidth(200);
+
+        TableColumn<Enquete, String> colDescription = new TableColumn<>("Description");
+        colDescription.setCellValueFactory(new PropertyValueFactory<>("description"));
+        colDescription.setPrefWidth(250);
+
+        TableColumn<Enquete, String> colStatut = new TableColumn<>("Statut");
+        colStatut.setCellValueFactory(cellData -> 
+            new SimpleStringProperty(cellData.getValue().getStatut().name()));
+        colStatut.setCellFactory(column -> new TableCell<Enquete, String>() {
+            @Override
+            protected void updateItem(String item, boolean empty) {
+                super.updateItem(item, empty);
+                if (empty || item == null) {
+                    setText(null);
+                    setStyle("");
+                } else {
+                    setText(item);
+                    if ("ACTIVE".equals(item)) {
+                        setStyle("-fx-text-fill: green; -fx-font-weight: bold;");
+                    } else {
+                        setStyle("-fx-text-fill: red; -fx-font-weight: bold;");
+                    }
+                }
+            }
+        });
+        colStatut.setPrefWidth(100);
+
+        TableColumn<Enquete, String> colAnonyme = new TableColumn<>("Anonyme");
+        colAnonyme.setCellValueFactory(cellData -> 
+            new SimpleStringProperty(cellData.getValue().isAnonyme() ? "✓ Oui" : "✗ Non"));
+        colAnonyme.setPrefWidth(80);
+
+        TableColumn<Enquete, String> colDate = new TableColumn<>("Date création");
+        colDate.setCellValueFactory(cellData -> {
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+            return new SimpleStringProperty(cellData.getValue().getDateCreation().format(formatter));
+        });
+        colDate.setPrefWidth(150);
+
+        TableColumn<Enquete, String> colQuestions = new TableColumn<>("Questions");
+        colQuestions.setCellValueFactory(cellData -> {
+            int nbQuestions = cellData.getValue().getAttributs() != null ? 
+                             cellData.getValue().getAttributs().size() : 0;
+            return new SimpleStringProperty(nbQuestions + " question(s)");
+        });
+        colQuestions.setPrefWidth(100);
+
+        tableEnquetes.getColumns().addAll(colId, colSujet, colDescription, colStatut, 
+                                          colAnonyme, colDate, colQuestions);
+    }
+
+    private ToolBar createToolBar() {
+        ToolBar toolBar = new ToolBar();
+        toolBar.setStyle("-fx-background-color: #E0E0E0;");
+
+        Button btnActualiser = new Button("🔄 Actualiser");
+        btnActualiser.setOnAction(e -> {
+            chargerDonnees();
+            updateStatus("Données actualisées");
+        });
+
+        Button btnExporter = new Button("📥 Exporter");
+        btnExporter.setOnAction(e -> showMessage("Export en développement"));
+
+        Button btnImporter = new Button("📤 Importer");
+        btnImporter.setOnAction(e -> showMessage("Import en développement"));
+
+        toolBar.getItems().addAll(btnActualiser, new Separator(), btnExporter, btnImporter);
+        
+        return toolBar;
+    }
+
+    private HBox createActionButtons() {
+        HBox actionButtons = new HBox(10);
+        actionButtons.setPadding(new Insets(20, 0, 10, 0));
+        actionButtons.setAlignment(Pos.CENTER);
+
+        Button btnModifier = new Button("✏️ Modifier");
+        btnModifier.setStyle(
+            "-fx-background-color: #4CAF50; " +
+            "-fx-text-fill: WHITE; " +
+            "-fx-font-weight: bold; " +
+            "-fx-font-size: 14px; " +
+            "-fx-padding: 10 20;"
+        );
+        btnModifier.setOnAction(e -> modifierEnquete());
+
+        Button btnSupprimer = new Button("🗑️ Supprimer");
+        btnSupprimer.setStyle(
+            "-fx-background-color: #f44336; " +
+            "-fx-text-fill: WHITE; " +
+            "-fx-font-weight: bold; " +
+            "-fx-font-size: 14px; " +
+            "-fx-padding: 10 20;"
+        );
+        btnSupprimer.setOnAction(e -> supprimerEnquete());
+
+        Button btnActiver = new Button("✅ Activer");
+        btnActiver.setStyle(
+            "-fx-background-color: #2196F3; " +
+            "-fx-text-fill: WHITE; " +
+            "-fx-font-weight: bold; " +
+            "-fx-font-size: 14px; " +
+            "-fx-padding: 10 20;"
+        );
+        btnActiver.setOnAction(e -> changerStatut(true));
+
+        Button btnDesactiver = new Button("❌ Désactiver");
+        btnDesactiver.setStyle(
+            "-fx-background-color: #FF9800; " +
+            "-fx-text-fill: WHITE; " +
+            "-fx-font-weight: bold; " +
+            "-fx-font-size: 14px; " +
+            "-fx-padding: 10 20;"
+        );
+        btnDesactiver.setOnAction(e -> changerStatut(false));
+
+        Button btnVoirDetails = new Button("👁️ Voir détails");
+        btnVoirDetails.setStyle(
+            "-fx-background-color: #9C27B0; " +
+            "-fx-text-fill: WHITE; " +
+            "-fx-font-weight: bold; " +
+            "-fx-font-size: 14px; " +
+            "-fx-padding: 10 20;"
+        );
+        btnVoirDetails.setOnAction(e -> voirDetailsEnquete());
+
+        actionButtons.getChildren().addAll(
+            btnModifier, btnSupprimer, btnActiver, 
+            btnDesactiver, btnVoirDetails
+        );
+
+        return actionButtons;
+    }
+
+    private HBox createAdminBar() {
+        HBox adminBar = new HBox(10);
+        adminBar.setPadding(new Insets(10));
+        adminBar.setAlignment(Pos.CENTER_LEFT);
+        adminBar.setStyle("-fx-background-color: #1F1B1B;");
+
+        Button btnCreerEnquete = new Button("➕ Créer une enquête");
+        btnCreerEnquete.setStyle(
+            "-fx-background-color: WHITE; " +
+            "-fx-text-fill: BLACK; " +
+            "-fx-font-weight: bold; " +
+            "-fx-font-size: 14px; " +
+            "-fx-border-color: BLACK; " +
+            "-fx-border-width: 2px; " +
+            "-fx-border-radius: 5px; " +
+            "-fx-background-radius: 5px;"
+        );
+        btnCreerEnquete.setOnAction(e -> {
+            try {
+                new EnqueteForm(primaryStage).start(primaryStage);
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
+        });
+
+        Button btnRepondreEnquete = new Button("📝 Répondre à une enquête");
+        btnRepondreEnquete.setStyle(
+            "-fx-background-color: WHITE; " +
+            "-fx-text-fill: BLACK; " +
+            "-fx-font-weight: bold; " +
+            "-fx-font-size: 14px; " +
+            "-fx-border-color: BLACK; " +
+            "-fx-border-width: 2px; " +
+            "-fx-border-radius: 5px; " +
+            "-fx-background-radius: 5px;"
+        );
+        btnRepondreEnquete.setOnAction(e -> {
+            try {
+                new ReponseEnqueteForm(primaryStage).start(primaryStage);
+            } catch (Exception ex) {
+                ex.printStackTrace();
+            }
+        });
+
+        Region spacer = new Region();
+        HBox.setHgrow(spacer, Priority.ALWAYS);
+
+        adminBar.getChildren().addAll(btnCreerEnquete, btnRepondreEnquete, spacer);
+        return adminBar;
+    }
+
+    private HBox createStatusBar() {
+        HBox statusBar = new HBox(10);
+        statusBar.setPadding(new Insets(5, 10, 5, 10));
+        statusBar.setStyle("-fx-background-color: #E0E0E0;");
+        
+        statusLabel.setTextFill(Color.web("#1F1B1B"));
+        statusLabel.setFont(Font.font("Verdana", 11));
+        
+        statusBar.getChildren().add(statusLabel);
+        return statusBar;
+    }
+
+    private void chargerDonnees() {
+        try {
+            List<Enquete> enquetes = service.getAll();
+            enquetesList.clear();
+            enquetesList.addAll(enquetes);
+            tableEnquetes.setItems(enquetesList);
+            updateStatus(enquetesList.size() + " enquête(s) chargée(s)");
+        } catch (Exception e) {
+            e.printStackTrace();
+            showAlert("Erreur lors du chargement des données");
+        }
+    }
+
+    private void rechercherEnquetes(String query) {
+        try {
+            List<Enquete> resultats = new ArrayList<>();
+            for (Enquete e : service.getAll()) {
+                if (e.getSujet().toLowerCase().contains(query) ||
+                    e.getDescription().toLowerCase().contains(query)) {
+                    resultats.add(e);
+                }
+            }
+            enquetesList.clear();
+            enquetesList.addAll(resultats);
+            tableEnquetes.setItems(enquetesList);
+            updateStatus(resultats.size() + " résultat(s) pour \"" + query + "\"");
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void modifierEnquete() {
+        Enquete selected = tableEnquetes.getSelectionModel().getSelectedItem();
+        if (selected == null) {
+            showAlert("Veuillez sélectionner une enquête à modifier");
+            return;
+        }
+        modifierEnquete(selected);
+    }
+
+    private void modifierEnquete(Enquete enquete) {
+        // Créer une boîte de dialogue de modification
+        Dialog<Enquete> dialog = new Dialog<>();
+        dialog.setTitle("Modifier l'enquête");
+        dialog.setHeaderText("Modification de : " + enquete.getSujet());
+
+        ButtonType modifierButtonType = new ButtonType("Modifier", ButtonBar.ButtonData.OK_DONE);
+        dialog.getDialogPane().getButtonTypes().addAll(modifierButtonType, ButtonType.CANCEL);
+
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(10);
+        grid.setPadding(new Insets(20, 150, 10, 10));
+
+        TextField sujetField = new TextField(enquete.getSujet());
+        sujetField.setPrefWidth(300);
+        TextArea descArea = new TextArea(enquete.getDescription());
+        descArea.setPrefRowCount(3);
+        descArea.setPrefWidth(300);
+        CheckBox anonymeCheck = new CheckBox("Anonyme");
+        anonymeCheck.setSelected(enquete.isAnonyme());
+
+        ComboBox<StatutEnquete> statutCombo = new ComboBox<>();
+        statutCombo.getItems().setAll(StatutEnquete.values());
+        statutCombo.setValue(enquete.getStatut());
+
+        grid.add(new Label("Sujet:"), 0, 0);
+        grid.add(sujetField, 1, 0);
+        grid.add(new Label("Description:"), 0, 1);
+        grid.add(descArea, 1, 1);
+        grid.add(new Label("Statut:"), 0, 2);
+        grid.add(statutCombo, 1, 2);
+        grid.add(anonymeCheck, 1, 3);
+
+        dialog.getDialogPane().setContent(grid);
+
+        dialog.setResultConverter(dialogButton -> {
+            if (dialogButton == modifierButtonType) {
+                enquete.setSujet(sujetField.getText());
+                enquete.setDescription(descArea.getText());
+                enquete.setStatut(statutCombo.getValue());
+                enquete.setAnonyme(anonymeCheck.isSelected());
+                return enquete;
+            }
+            return null;
+        });
+
+        Optional<Enquete> result = dialog.showAndWait();
+        result.ifPresent(enqueteModifiee -> {
+            try {
+                service.modifier(enqueteModifiee);
+                chargerDonnees();
+                showInfo("Succès", "Enquête modifiée avec succès !");
+            } catch (Exception e) {
+                e.printStackTrace();
+                showAlert("Erreur lors de la modification");
+            }
+        });
+    }
+
+    private void supprimerEnquete() {
+        Enquete selected = tableEnquetes.getSelectionModel().getSelectedItem();
+        if (selected == null) {
+            showAlert("Veuillez sélectionner une enquête à supprimer");
+            return;
+        }
+
+        Alert confirm = new Alert(Alert.AlertType.CONFIRMATION);
+        confirm.setTitle("Confirmation de suppression");
+        confirm.setHeaderText("Supprimer l'enquête");
+        confirm.setContentText("Êtes-vous sûr de vouloir supprimer l'enquête : " + selected.getSujet() + " ?");
+
+        Optional<ButtonType> result = confirm.showAndWait();
+        if (result.isPresent() && result.get() == ButtonType.OK) {
+            try {
+                service.supprimer(selected.getIdEnquete());
+                chargerDonnees();
+                showInfo("Succès", "Enquête supprimée avec succès !");
+            } catch (Exception e) {
+                e.printStackTrace();
+                showAlert("Erreur lors de la suppression");
+            }
+        }
+    }
+
+    private void changerStatut(boolean activer) {
+        Enquete selected = tableEnquetes.getSelectionModel().getSelectedItem();
+        if (selected == null) {
+            showAlert("Veuillez sélectionner une enquête");
+            return;
+        }
+
+        try {
+            if (activer) {
+                service.activer(selected.getIdEnquete());
+                showInfo("Succès", "Enquête activée avec succès !");
+            } else {
+                service.desactiver(selected.getIdEnquete());
+                showInfo("Succès", "Enquête désactivée avec succès !");
+            }
+            chargerDonnees();
+        } catch (Exception e) {
+            e.printStackTrace();
+            showAlert("Erreur lors du changement de statut");
+        }
+    }
+
+    private void voirDetailsEnquete() {
+        Enquete selected = tableEnquetes.getSelectionModel().getSelectedItem();
+        if (selected == null) {
+            showAlert("Veuillez sélectionner une enquête");
+            return;
+        }
+
+        StringBuilder details = new StringBuilder();
+        details.append("ID: ").append(selected.getIdEnquete()).append("\n");
+        details.append("Sujet: ").append(selected.getSujet()).append("\n");
+        details.append("Description: ").append(selected.getDescription()).append("\n");
+        details.append("Statut: ").append(selected.getStatut()).append("\n");
+        details.append("Anonyme: ").append(selected.isAnonyme() ? "Oui" : "Non").append("\n");
+        details.append("Date création: ").append(selected.getDateCreation()).append("\n");
+        details.append("\nQuestions:\n");
+        
+        if (selected.getAttributs() != null && !selected.getAttributs().isEmpty()) {
+            for (int i = 0; i < selected.getAttributs().size(); i++) {
+                details.append(i+1).append(". ").append(selected.getAttributs().get(i).getNom()).append("\n");
+            }
+        } else {
+            details.append("Aucune question");
+        }
+
+        TextArea textArea = new TextArea(details.toString());
+        textArea.setEditable(false);
+        textArea.setPrefRowCount(15);
+        textArea.setPrefWidth(400);
+
+        Dialog<Void> dialog = new Dialog<>();
+        dialog.setTitle("Détails de l'enquête");
+        dialog.getDialogPane().setContent(textArea);
+        dialog.getDialogPane().getButtonTypes().add(ButtonType.CLOSE);
+        dialog.showAndWait();
+    }
+
+    private void updateStatus(String message) {
+        statusLabel.setText("📌 " + message + " - " + java.time.LocalDateTime.now().format(DateTimeFormatter.ofPattern("HH:mm:ss")));
+    }
+
+    private void showAlert(String message) {
+        Alert alert = new Alert(Alert.AlertType.WARNING);
+        alert.setHeaderText(null);
+        alert.setContentText(message);
+        alert.showAndWait();
+    }
+
+    private void showInfo(String title, String message) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setTitle(title);
+        alert.setHeaderText(null);
+        alert.setContentText(message);
+        alert.showAndWait();
+    }
+
+    private void showMessage(String msg) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setHeaderText(null);
+        alert.setContentText(msg);
+        alert.showAndWait();
+    }
+
+    public static void main(String[] args) {
+        launch(args);
+    }
+}
